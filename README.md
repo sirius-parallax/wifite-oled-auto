@@ -1,10 +1,4 @@
-Вы абсолютно правы! **Crunch** — это стандартная утилита для генерации словарей, проще и быстрее. Давайте я сделаю **ОДИН полный README.md файл** который можно просто скопировать и вставить на GitHub.
 
----
-
-## 📁 Полный `README.md` (один файл для копирования):
-
-```markdown
 # 📡 WiFi Audit Tool with OLED Display
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
