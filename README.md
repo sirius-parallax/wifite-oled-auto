@@ -26,6 +26,7 @@
 10. [Диагностика](#-диагностика-проблем)
 11. [FAQ](#-faq)
 
+
 ---
 
 ## 📋 Описание
@@ -44,6 +45,8 @@
 - 🔓 Найденные пароли (мигает при взломе)
 - ⚙️ Результаты (после завершения)
 
+После завершения всех атак скрипт **автоматически перезапускается** через 1 минуту и начинает новый цикл.
+
 ---
 
 ## ✨ Возможности
@@ -57,6 +60,7 @@
 - ✅ **Умный дисплей** — приоритетный вывод (взлом > атака > логи)
 - ✅ **Дата и время** — фиксация момента взлома каждой сети
 - ✅ **Универсальность** — автоматическое определение путей (работает на любом Linux)
+- ✅ **Циклическая работа** — бесконечные циклы атак 24/7
 
 ---
 
@@ -172,7 +176,7 @@ nano wifi_audit.py
 
 ```python
 INTERFACE = "wlan0"                              # Ваш WiFi интерфейс
-DICTIONARY = "/usr/share/dict/passwords.txt"     # Путь к словарю
+DICTIONARY = ""                                  # Пусто = встроенный словарь wifite
 WIFITE_POWER = 40                                # Мин. мощность сигнала (dbm)
 WIFITE_SCAN_TIME = 60                            # Время сканирования (сек)
 OLED_UPDATE_INTERVAL = 5                         # Обновление экрана (сек)
@@ -201,7 +205,7 @@ sudo python3 wifi_audit.py
 sudo nano /etc/systemd/system/wifi-audit.service
 ```
 
-**Вставьте содержимое:**
+**Вставьте содержимое (замените `username` на ваше имя пользователя!):**
 
 ```ini
 [Unit]
@@ -211,17 +215,27 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ/wifi-audit-oled
-ExecStart=/usr/bin/script -q -c "/usr/bin/python3 /home/ВАШ_ПОЛЬЗОВАТЕЛЬ/wifi-audit-oled/wifi_audit.py" /dev/null
-Restart=on-failure
-RestartSec=10
+WorkingDirectory=/home/username/wifi-audit-oled
+ExecStart=/usr/bin/script -q -c "/usr/bin/python3 /home/username/wifi-audit-oled/wifi_audit.py" /dev/null
+
+# === Циклическая работа ===
+Restart=always           # Перезапускать после завершения
+RestartSec=60            # Ждать 1 минуту перед рестартом
+
+StandardOutput=journal
+StandardError=journal
 ExecStartPre=/bin/sleep 5
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-⚠️ **Замените `/home/ВАШ_ПОЛЬЗОВАТЕЛЬ/` на ваш путь!** (например `/home/user/`)
+⚠️ **ВАЖНО: Замените пути на ваши!**
+
+| Что заменить | Пример |
+|--------------|--------|
+| `/home/username/` | `/home/arkh/` |
+| `/home/username/wifi-audit-oled` | `/home/arkh/wifi_oled/` |
 
 ### Активация
 
@@ -235,7 +249,14 @@ sudo systemctl start wifi-audit.service
 
 ```bash
 sudo systemctl status wifi-audit.service
+sudo journalctl -u wifi-audit.service -f
 ```
+
+> **ℹ️ Циклическая работа:**
+> - Скрипт выполняет 3 атаки (~30 мин)
+> - После завершения ждёт 1 минуту
+> - Автоматически запускается заново
+> - Работает бесконечно ♾️
 
 ---
 
@@ -261,6 +282,19 @@ sudo i2cdetect -y 0
 # Должно показать 3c
 ```
 **Решение:** Проверьте подключение проводов (GND, VCC, SCL, SDA). Убедитесь что VCC = 3.3V.
+
+### Служба не запускается (ошибка CHDIR)
+```bash
+# Проверьте что папка существует
+ls -la /home/username/wifi-audit-oled/
+
+# Исправьте пути в службе
+sudo nano /etc/systemd/system/wifi-audit.service
+
+# Перезапустите
+sudo systemctl daemon-reload
+sudo systemctl restart wifi-audit.service
+```
 
 ### Скрипт не запускается
 ```bash
@@ -295,16 +329,19 @@ sudo python3 wifi_audit.py  # Проверка вручную
 A: Да, скрипт работает, логи пишутся в `journalctl` и файл.
 
 **Q: Какой словарь лучше?**  
-A: 8 цифр (`crunch 8 8 0123456789`) или `rockyou.txt`.
+A: Встроенный в wifite (по умолчанию) или `crunch 8 8 0123456789`.
 
 **Q: Сколько времени на атаку?**  
-A: ~25-30 минут на полный цикл (3 атаки).
+A: ~25-30 минут на полный цикл (3 атаки) + 1 минута пауза.
 
 **Q: Где взломанные пароли?**  
 A: `~/cracked.json` и `~/wifite_full_log.txt`.
 
 **Q: Как изменить интервал экрана?**  
 A: В скрипте `OLED_UPDATE_INTERVAL = 5`.
+
+**Q: Как остановить циклическую работу?**  
+A: В службе измените `Restart=always` на `Restart=on-failure`.
 
 **Q: Автовыключение после завершения?**  
 A: Добавьте в конец функции `show_final_results()`:
@@ -315,18 +352,61 @@ subprocess.run(["sudo", "shutdown", "-h", "now"])
 **Q: Работает на Raspberry Pi?**  
 A: Да, подключите OLED к GPIO (SCL/SDA/GND/3.3V).
 
+---
+
 
 ## 📝 Лицензия
 
 **MIT License** — свободное использование с указанием авторства.
 
+---
+
+## 📧 Контакты
+
+
+---
+
+## 📚 Полезные ссылки
+
+- [Wifite2 GitHub](https://github.com/kimocoder/wifite2)
+- [Luma.OLED Documentation](https://luma-oled.readthedocs.io/)
+- [Crunch Man Page](https://manpages.org/crunch)
+- [Aircrack-ng Documentation](https://www.aircrack-ng.org/)
+
+---
+
+<div align="center">
+
+### ⭐ Если проект был полезен — поставьте звезду!
+
+**Made with ❤️ for security research**
+
+[![GitHub stars](https://img.shields.io/github/stars/ВАШ_НИК/wifi-audit-oled.svg?style=social&label=Star)](https://github.com/ВАШ_НИК/wifi-audit-oled)
+[![GitHub forks](https://img.shields.io/github/forks/ВАШ_НИК/wifi-audit-oled.svg?style=social&label=Fork)](https://github.com/ВАШ_НИК/wifi-audit-oled)
+
+</div>
+```
+
+---
+
+## ✅ Что нужно заменить перед публикацией:
+
+| Где | Что заменить | Пример |
+|-----|--------------|--------|
+| `ВАШ_НИК` | Ваш ник GitHub | `@alexey` |
+| `ваш@email.com` | Ваш email | `alexey@email.com` |
+| `/home/username/` | Ваш пользователь | `/home/arkh/` |
+| `wifi-audit-oled` | Ваша папка | `wifi_oled` |
+
+---
 
 ## 📁 Структура репозитория:
 
 ```
 wifi-audit-oled/
 ├── README.md           # ← Этот файл
-├── wifi_audit.py       # ← Основной скрипт (универсальный)
+├── wifi_audit.py       # ← Основной скрипт
 ├── requirements.txt    # ← luma.oled
 └── wifi-audit.service  # ← Файл службы (опционально)
 ```
+
