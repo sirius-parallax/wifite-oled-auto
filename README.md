@@ -343,41 +343,6 @@ A: Да, подключите OLED к GPIO (SCL/SDA/GND/3.3V).
 
 **MIT License** — свободное использование с указанием авторства.
 
----
-
-## 📧 Контакты
-
-| GitHub | Email |
-|--------|-------|
-| [@ВАШ_НИК](https://github.com/ВАШ_НИК) | ваш@email.com |
-
----
-
-## 📚 Полезные ссылки
-
-- [Wifite2 GitHub](https://github.com/kimocoder/wifite2)
-- [Luma.OLED Documentation](https://luma-oled.readthedocs.io/)
-- [Crunch Man Page](https://manpages.org/crunch)
-- [Aircrack-ng Documentation](https://www.aircrack-ng.org/)
-
----
-
-<div align="center">
-
-### ⭐ Если проект был полезен — поставьте звезду!
-
-**Made with ❤️ for security research**
-
-[![GitHub stars](https://img.shields.io/github/stars/ВАШ_НИК/wifi-audit-oled.svg?style=social&label=Star)](https://github.com/ВАШ_НИК/wifi-audit-oled)
-[![GitHub forks](https://img.shields.io/github/forks/ВАШ_НИК/wifi-audit-oled.svg?style=social&label=Fork)](https://github.com/ВАШ_НИК/wifi-audit-oled)
-
-</div>
-```
-
----
-
-
----
 
 ## 📁 Структура репозитория:
 
