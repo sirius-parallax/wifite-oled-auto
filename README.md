@@ -230,13 +230,6 @@ ExecStartPre=/bin/sleep 5
 WantedBy=multi-user.target
 ```
 
-⚠️ **ВАЖНО: Замените пути на ваши!**
-
-| Что заменить | Пример |
-|--------------|--------|
-| `/home/username/` | `/home/arkh/` |
-| `/home/username/wifi-audit-oled` | `/home/arkh/wifi_oled/` |
-
 ### Активация
 
 ```bash
