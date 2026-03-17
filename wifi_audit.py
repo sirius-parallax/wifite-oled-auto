@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 WiFi Audit Tool with OLED Display
-NanoPi NEO + SSD1306 128x64
-Универсальная версия с автоопределением путей
+NanoPi NEO + GME128128-01 (SH1106) 128x128
+Исправленный дизайн (правильные отступы)
 """
 
 import subprocess
@@ -13,156 +13,178 @@ import json
 from datetime import datetime
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
-from luma.oled.device import ssd1306
+from luma.oled.device import sh1106
 
 # ============================================================================
-# === НАСТРОЙКИ (автоматические пути) =========================================
+# === НАСТРОЙКИ ===============================================================
 # ============================================================================
 
-# === АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ ===
-HOME_DIR = os.path.expanduser("~")              # Домашняя папка пользователя
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))  # Папка со скриптом
+HOME_DIR = os.path.expanduser("~")
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-INTERFACE = "wlan0"                             # WiFi интерфейс
+INTERFACE = "wlan0"
+DICTIONARY = ""
 
-# === Словарь паролей ===
-# Оставьте пустым "" для использования встроенного словаря wifite
-# Или укажите путь: "/usr/share/dict/passwords.txt"
-DICTIONARY = ""                                 # Пусто = встроенный словарь wifite
-
-# === Пути к файлам (автоматические) ===
 LOG_FILE = os.path.join(HOME_DIR, "wifite_full_log.txt")
 CRACKED_FILE = os.path.join(HOME_DIR, "cracked.json")
 
-WIFITE_POWER = 40                               # Мин. мощность сигнала (dbm)
-WIFITE_SCAN_TIME = 60                           # Время сканирования (секунды)
+WIFITE_POWER = 40
+WIFITE_SCAN_TIME = 60
 
-CHECK_INTERVAL = 30                             # Проверка результатов каждые N сек
-OLED_UPDATE_INTERVAL = 5                        # Обновление экрана каждые N сек
+CHECK_INTERVAL = 30
+OLED_UPDATE_INTERVAL = 5
 
-# --- Настройки логов на OLED ---
-OLED_LOG_LINES = 4                              # Сколько строк логов показывать
-OLED_LOG_MAX_LEN = 21                           # Макс. длина строки (символов)
+OLED_LOG_LINES = 9
+OLED_LOG_MAX_LEN = 19
 
-SHOW_DATE_ON_START = True                       # Показывать дату/время при старте
-SHOW_CRACKED_TIME = True                        # Показывать когда найден пароль
+SHOW_DATE_ON_START = True
+SHOW_CRACKED_TIME = True
 
 # ============================================================================
 # === КОНЕЦ НАСТРОЕК ==========================================================
 # ============================================================================
 
-# === Функция для построения команды wifite ===
 def build_wifite_cmd(base_cmd, include_dict=True):
-    """Строит команду wifite, добавляя --dict только если словарь указан"""
     cmd = base_cmd.copy()
     if include_dict and DICTIONARY and DICTIONARY.strip():
         cmd.extend(["--dict", DICTIONARY])
     return cmd
 
-# === Три сценария атак (БЕЗ --skip-crack для реального взлома) ===
 ATTACK_SCENARIOS = [
     {
         "name": "WPS Pixie-Dust",
         "cmd": build_wifite_cmd([
-            "sudo", "wifite",
-            "-i", INTERFACE,
-            "--pow", str(WIFITE_POWER),
-            "-p", str(WIFITE_SCAN_TIME),
-            "--pixie",
-            "--no-pmkid",
-            "--wps-only",
-            "-ic"
-        ], include_dict=False)  # WPS не нуждается в словаре
+            "sudo", "wifite", "-i", INTERFACE,
+            "--pow", str(WIFITE_POWER), "-p", str(WIFITE_SCAN_TIME),
+            "--pixie", "--no-pmkid", "--wps-only", "-ic"
+        ], include_dict=False)
     },
     {
         "name": "WPA Dict + PMKID",
         "cmd": build_wifite_cmd([
-            "sudo", "wifite",
-            "-i", INTERFACE,
-            "--pow", str(WIFITE_POWER),
-            "-p", str(WIFITE_SCAN_TIME),
-            "--no-wps",
-            "-ic"
-        ], include_dict=True)  # Словарь нужен
+            "sudo", "wifite", "-i", INTERFACE,
+            "--pow", str(WIFITE_POWER), "-p", str(WIFITE_SCAN_TIME),
+            "--no-wps", "-ic"
+        ], include_dict=True)
     },
     {
         "name": "WPA Dict (HS Only)",
         "cmd": build_wifite_cmd([
-            "sudo", "wifite",
-            "-i", INTERFACE,
-            "--pow", str(WIFITE_POWER),
-            "-p", str(WIFITE_SCAN_TIME),
-            "--no-wps",
-            "--clients-only",
-            "--no-pmkid",
-            "-ic"
-        ], include_dict=True)  # Словарь нужен
+            "sudo", "wifite", "-i", INTERFACE,
+            "--pow", str(WIFITE_POWER), "-p", str(WIFITE_SCAN_TIME),
+            "--no-wps", "--clients-only", "--no-pmkid", "-ic"
+        ], include_dict=True)
     }
 ]
 
 # === Инициализация OLED ===
 serial = i2c(port=0, address=0x3C)
-device = ssd1306(serial, width=128, height=64)
+device = sh1106(serial, width=128, height=128)
 
-# === Глобальные переменные ===
 already_shown_networks = set()
 cracked_networks_with_time = {}
 attack_start_time = None
 recent_logs = []
 
 def draw_oled(mode, data=None):
-    """Умный вывод на OLED с приоритетами"""
+    """Современный интерфейс для 128x128 (исправленные отступы)"""
     try:
         with canvas(device) as draw:
-            draw.rectangle((0, 0, 127, 10), fill=255, outline=0)
+            # ШАПКА (12px)
+            draw.rectangle((0, 0, 127, 12), fill=1, outline=0)
             
             if mode == 'cracked':
-                draw.text((2, 1), "!!! CRACKED !!!", fill=0)
-                draw.text((2, 13), f"SSID: {data.get('essid', 'Unknown')[:18]}", fill=255)
-                draw.text((2, 23), f"KEY:  {data.get('key', 'Unknown')[:18]}", fill=255)
-                draw.text((2, 33), f"Time: {data.get('time', '')}", fill=255)
+                draw.text((18, 1), "!!! CRACKED !!!", fill=0)
+                draw.rectangle((4, 4, 123, 123), outline=1, fill=0)
+                draw.text((8, 18), "Network:", fill=1)
+                draw.text((8, 28), f"{data.get('essid', 'Unknown')[:15]}", fill=1)
+                draw.line((8, 42, 120, 42), fill=1)
+                draw.text((8, 48), "Password:", fill=1)
+                draw.text((8, 58), f"{data.get('key', 'Unknown')[:15]}", fill=1)
+                draw.line((8, 72, 120, 72), fill=1)
+                draw.text((8, 78), f"Time: {data.get('time', '')}", fill=1)
+                draw.text((8, 90), f"Method: {data.get('method', 'WPA')}", fill=1)
+                if int(time.time()) % 2 == 0:
+                    draw.rectangle((110, 1, 126, 11), fill=1, outline=0)
+                    draw.text((112, 2), "!", fill=0)
                 
             elif mode == 'attack':
-                draw.text((2, 1), data.get('title', 'ATTACK')[:18], fill=0)
-                draw.text((2, 13), f"Target: {data.get('target', 'Scanning...')[:18]}", fill=255)
-                draw.text((2, 23), f"Cur: {data.get('cur_time', '00m00s')}", fill=255)
-                draw.text((2, 33), f"Tot: {data.get('tot_time', '00m00s')}", fill=255)
+                draw.text((22, 1), "[*] ATTACKING", fill=0)
+                draw.text((8, 18), "Mode:", fill=1)
+                draw.text((48, 18), f"{data.get('title', 'ATTACK')[:11]}", fill=1)
+                draw.text((8, 30), "Target:", fill=1)
+                draw.text((48, 30), f"{data.get('target', 'Scan...')[:11]}", fill=1)
+                draw.line((8, 44, 120, 44), fill=1)
+                draw.text((8, 50), "Current:", fill=1)
+                draw.text((60, 50), f"{data.get('cur_time', '00m00s')}", fill=1)
+                draw.text((8, 62), "Total:", fill=1)
+                draw.text((60, 62), f"{data.get('tot_time', '00m00s')}", fill=1)
+                draw.line((8, 76, 120, 76), fill=1)
+                draw.text((8, 82), f"Pwr:{WIFITE_POWER}dbm", fill=1)
+                draw.text((58, 82), f"Scan:{WIFITE_SCAN_TIME}s", fill=1)
+                draw.text((108, 82), f"D:{'C' if DICTIONARY else 'D'}", fill=1)
+                anim_pos = (int(time.time()) % 4) * 3
+                for i in range(4):
+                    if i == anim_pos // 3:
+                        draw.rectangle((115 + (i * 3), 2, 117 + (i * 3), 10), fill=1, outline=0)
                 
             elif mode == 'logs':
-                draw.text((2, 1), "LOGS", fill=0)
+                draw.text((48, 1), "[LOGS]", fill=0)
                 logs = data.get('logs', []) if data else []
                 display_logs = logs[-OLED_LOG_LINES:]
-                y_positions = [12, 22, 32, 42]
+                y_start = 20
+                line_height = 11
                 for i, log_line in enumerate(display_logs):
-                    if i < len(y_positions):
-                        draw.text((2, y_positions[i]), log_line[:OLED_LOG_MAX_LEN], fill=255)
-                    
+                    y_pos = y_start + (i * line_height)
+                    prefix = ">" if i == len(display_logs) - 1 else " "
+                    draw.text((4, y_pos), f"{prefix} {log_line[:OLED_LOG_MAX_LEN]}", fill=1)
+                
             elif mode == 'results':
-                draw.text((2, 1), "RESULTS", fill=0)
-                draw.text((2, 13), f"Found: {data.get('count', 0)} networks", fill=255)
-                if data.get('networks') and len(data['networks']) > 0:
-                    draw.text((2, 23), f"{data['networks'][0][:18]}", fill=255)
-                draw.text((2, 33), f"Time: {data.get('tot_time', '')}", fill=255)
+                draw.text((38, 1), "[RESULTS]", fill=0)
+                count = data.get('count', 0)
+                draw.text((8, 18), f"Total: {count} network(s)", fill=1)
+                draw.line((8, 30, 120, 30), fill=1)
+                networks = data.get('networks', [])
+                if networks and len(networks) > 0:
+                    for i, net in enumerate(networks[:6]):
+                        y_pos = 36 + (i * 12)
+                        draw.text((8, y_pos), f"[{i+1}] {net[:13]}", fill=1)
+                else:
+                    draw.text((8, 36), "No networks", fill=1)
+                draw.line((8, 108, 120, 108), fill=1)
+                draw.text((8, 114), f"Time: {data.get('tot_time', '00m00s')}", fill=1)
                 
             elif mode == 'error':
-                draw.text((2, 1), "ERROR", fill=0)
-                draw.text((2, 13), data.get('message', 'Unknown error')[:18], fill=255)
-                draw.text((2, 23), data.get('details', '')[:18], fill=255)
+                draw.text((42, 1), "[ERROR]", fill=0)
+                draw.rectangle((8, 20, 120, 105), outline=1, fill=0)
+                draw.text((12, 30), "Error:", fill=1)
+                draw.text((12, 42), data.get('message', 'Unknown')[:14], fill=1)
+                draw.text((12, 56), "Details:", fill=1)
+                draw.text((12, 68), data.get('details', '')[:14], fill=1)
                 
             else:
-                draw.text((2, 1), "WiFi Audit", fill=0)
-                draw.text((2, 13), "Ready", fill=255)
-                draw.text((2, 23), f"Start: {attack_start_time}", fill=255)
+                draw.text((30, 1), "[WiFi AUDIT]", fill=0)
+                draw.text((8, 22), "System Ready", fill=1)
+                draw.line((8, 32, 120, 32), fill=1)
+                draw.text((8, 40), f"Interface: {INTERFACE}", fill=1)
+                draw.text((8, 52), f"Display: 128x128", fill=1)
+                draw.text((8, 64), f"Controller: SH1106", fill=1)
+                draw.text((8, 76), f"Power: {WIFITE_POWER}dbm", fill=1)
+                draw.text((8, 88), f"Scan: {WIFITE_SCAN_TIME}s", fill=1)
+                draw.text((8, 100), f"Started: {attack_start_time}", fill=1)
             
-            footer = f"{get_current_datetime()} | {WIFITE_POWER}dbm"
-            draw.rectangle((0, 50, 127, 60), fill=0, outline=0)
-            draw.text((2, 51), footer[:19], fill=255)
+            # ПОДВАЛ (15px)
+            footer_bg_y = 113
+            draw.rectangle((0, footer_bg_y, 127, 127), fill=0, outline=1)
+            datetime_str = get_current_datetime()
+            status_icon = "●" if mode == 'attack' else "○"
+            footer_text = f"{status_icon} {datetime_str} | {WIFITE_POWER}dbm"
+            draw.text((3, footer_bg_y + 2), footer_text[:20], fill=1)
             
     except Exception as e:
         print(f"[OLED ERROR] {e}")
 
 def add_to_logs(line):
-    """Добавляет строку в буфер логов"""
     global recent_logs
     clean_line = strip_ansi(line).strip()
     if not clean_line:
@@ -173,7 +195,7 @@ def add_to_logs(line):
         return
     if len(clean_line) > 0:
         recent_logs.append(clean_line)
-        if len(recent_logs) > 15:
+        if len(recent_logs) > 25:
             recent_logs.pop(0)
 
 def strip_ansi(text):
@@ -220,7 +242,6 @@ def check_interface_exists(iface):
         return False
 
 def find_cracked_json():
-    """Ищет cracked.json в нескольких местах"""
     possible_paths = [
         CRACKED_FILE,
         os.path.join(HOME_DIR, "cracked.json"),
@@ -230,7 +251,6 @@ def find_cracked_json():
         os.path.join(CURRENT_DIR, "cracked.json"),
         "/tmp/cracked.json"
     ]
-    
     for path in possible_paths:
         if os.path.exists(path):
             return path
@@ -328,12 +348,12 @@ def get_all_cracked_networks():
     return unique
 
 def update_oled_display(scenario_name, current_elapsed, total_elapsed, networks, cracked_net=None, show_logs=False):
-    """Умное обновление OLED на основе приоритетов"""
     if cracked_net:
         draw_oled('cracked', {
             'essid': cracked_net['essid'],
             'key': cracked_net['key'],
-            'time': get_current_datetime()
+            'time': get_current_datetime(),
+            'method': 'WPA2'
         })
         return
     if show_logs:
@@ -342,9 +362,9 @@ def update_oled_display(scenario_name, current_elapsed, total_elapsed, networks,
     if scenario_name:
         target = "Scanning..."
         if networks and len(networks) > 0:
-            target = f"{len(networks)} networks"
+            target = f"{len(networks)} nets"
         draw_oled('attack', {
-            'title': scenario_name[:18],
+            'title': scenario_name[:12],
             'target': target,
             'cur_time': format_elapsed_time(current_elapsed) if current_elapsed else '00m00s',
             'tot_time': format_elapsed_time(total_elapsed) if total_elapsed else '00m00s'
@@ -360,7 +380,6 @@ def update_oled_display(scenario_name, current_elapsed, total_elapsed, networks,
     draw_oled('default', {})
 
 def check_and_show_cracked(total_start, scenario_name, current_elapsed, total_elapsed):
-    """Проверяет взломанные сети и обновляет OLED"""
     global already_shown_networks, cracked_networks_with_time
     networks = get_all_cracked_networks()
     current_time = get_current_datetime()
@@ -377,10 +396,15 @@ def check_and_show_cracked(total_start, scenario_name, current_elapsed, total_el
     if new_networks:
         for net in new_networks:
             print(f"\n[+] *** CRACKED: {net['essid']} - {net['key']} ***")
-            for i in range(3):
-                update_oled_display(None, None, None, None, cracked_net=net)
+            for i in range(6):
+                draw_oled('cracked', {
+                    'essid': net['essid'],
+                    'key': net['key'],
+                    'time': current_time,
+                    'method': 'WPA2'
+                })
                 time.sleep(0.5)
-            time.sleep(2)
+            time.sleep(3)
         return True
     return False
 
@@ -446,7 +470,7 @@ def run_attack(scenario, scenario_num, total_scenarios, f_log, total_start):
     except Exception as e:
         print(f"[-] Error in {scenario['name']}: {e}")
         f_log.write(f"[ERROR] {scenario['name']}: {e}\n")
-        draw_oled('error', {'message': 'ERROR', 'details': str(e)[:18]})
+        draw_oled('error', {'message': 'ERROR', 'details': str(e)[:15]})
         time.sleep(3)
         return 0
 
@@ -466,6 +490,7 @@ def main():
     print(f"Power: {WIFITE_POWER} dbm | Scan time: {WIFITE_SCAN_TIME}s")
     print(f"Dictionary: {DICTIONARY if DICTIONARY else '(wifite default)'}")
     print(f"Log file: {LOG_FILE}")
+    print(f"Display: GME128128-01 (SH1106) 128x128")
     print("=" * 60)
     
     if SHOW_DATE_ON_START:
@@ -502,14 +527,15 @@ def main():
             f_log.write(f"Home: {HOME_DIR}\n")
             f_log.write(f"Interface: {INTERFACE}\n")
             f_log.write(f"Power: {WIFITE_POWER} dbm | Scan time: {WIFITE_SCAN_TIME}s\n")
-            f_log.write(f"Dictionary: {DICTIONARY if DICTIONARY else '(wifite default)'}\n\n")
+            f_log.write(f"Dictionary: {DICTIONARY if DICTIONARY else '(wifite default)'}\n")
+            f_log.write(f"Display: GME128128-01 (SH1106) 128x128\n\n")
             total_attack_time = 0
             for i, scenario in enumerate(ATTACK_SCENARIOS, 1):
                 duration = run_attack(scenario, i, len(ATTACK_SCENARIOS), f_log, total_start)
                 total_attack_time += duration
                 if i < len(ATTACK_SCENARIOS):
                     for countdown in range(5, 0, -1):
-                        draw_oled('attack', {'title': 'PAUSE', 'target': f'Next in {countdown}s', 'cur_time': '', 'tot_time': ''})
+                        draw_oled('attack', {'title': 'PAUSE', 'target': f'Next: {countdown}s', 'cur_time': '', 'tot_time': ''})
                         time.sleep(1)
             total_elapsed = time.time() - total_start
             print("\n" + "=" * 60)
@@ -551,7 +577,7 @@ def main():
             pass
         show_final_results(networks, total_elapsed, "STOPPED")
     except Exception as e:
-        draw_oled('error', {'message': 'ERROR', 'details': str(e)[:18]})
+        draw_oled('error', {'message': 'ERROR', 'details': str(e)[:15]})
         print(f"\n[ERROR] {e}")
         time.sleep(5)
 
